@@ -1,10 +1,10 @@
 # Strix-Halo MinerU Docker Container
 
-A Docker-based deployment of [MinerU](https://github.com/opendatalab/MinerU) 3.0.8 for converting PDFs (textbooks, academic papers, technical documents) into structured Markdown with LaTeX formula support. Built specifically for AMD Strix-Halo systems using ROCm 7.2.1 GPU acceleration.
+A Docker-based deployment of [MinerU](https://github.com/opendatalab/MinerU) 3.0.8 for converting PDFs (textbooks, academic papers, technical documents) into structured Markdown with LaTeX formula support. Built specifically for AMD Strix-Halo systems like the Corsair AI Workstation 300, using ROCm 7.2.1 GPU acceleration that hasn't made it to mainstream yet.
 
 ## Why this exists
 
-I have a Corsair AI Workstation 300, and getting anything outside the most mainstream of mainstream AI workloads has been a challenge.  One such challenge was installing MinerU with ROCm GPU support. MinerU depends on PyTorch and so we need to use AMD's ROCm-compiled GPU wheels for PyTorch and a few other dependencies.  This project uses a `pyproject.toml` that routes torch packages to AMD's wheel repository via `uv`'s index pinning, ensuring the ROCm builds are always used.
+While strix-halo compatability has reached many releases, using PyTorch with ROCm 7.2.1 still requires using special AMD compiled wheels.  MinerU is product that leverages pytorch, so this is to address that gap.  This project uses a `pyproject.toml` that routes torch packages to AMD's wheel repository via `uv`'s index pinning, ensuring the ROCm builds are always used.
 
 ## Prerequisites
 
@@ -12,6 +12,8 @@ I have a Corsair AI Workstation 300, and getting anything outside the most mains
 - Docker and Docker Compose
 - ROCm kernel driver installed on the host
 - At least 20GB disk space for models and the Docker image
+- *Note:* I would get AMDGPU hang events, and then I set `amdgpu.cwsr_enable=0` in my `/etc/default/grub` and I have so far not had the hang events.
+
 
 ## Quick start
 
@@ -75,72 +77,6 @@ Notes:
 - `download-models` spins up a one-shot container with the same volume mounts, downloads into the persistent `models/` directory, and exits cleanly.
 - `clean` keeps the model cache since re-downloading is expensive (~2GB). `clean-all` wipes everything including models.
 
-## API usage
-
-MinerU exposes a REST API. Full docs are available at `http://localhost:8000/docs` when the service is running.
-
-### Parse a single page
-
-```bash
-curl -X POST http://127.0.0.1:8000/file_parse \
-    -F "files=@paper.pdf" \
-    -F "formula_enable=true" \
-    -F "table_enable=true" \
-    -F "return_md=true" \
-    -F "response_format_zip=true" \
-    -F "return_original_file=false" \
-    -F "start_page_id=12" \
-    -F "end_page_id=12" \
-    -o output.zip
-```
-
-### Parse a page range
-
-```bash
-curl -X POST http://127.0.0.1:8000/file_parse \
-    -F "files=@textbook.pdf" \
-    -F "formula_enable=true" \
-    -F "table_enable=true" \
-    -F "return_md=true" \
-    -F "response_format_zip=true" \
-    -F "return_original_file=false" \
-    -F "start_page_id=120" \
-    -F "end_page_id=180" \
-    -o chapter.zip
-```
-
-### Parse an entire document
-
-```bash
-curl -X POST http://127.0.0.1:8000/file_parse \
-    -F "files=@document.pdf" \
-    -F "formula_enable=true" \
-    -F "table_enable=true" \
-    -F "return_md=true" \
-    -F "response_format_zip=true" \
-    -o document.zip
-```
-
-### Common parameters
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `files` | file | PDF file to parse (required) |
-| `formula_enable` | bool | Enable LaTeX formula recognition |
-| `table_enable` | bool | Enable table structure recognition |
-| `return_md` | bool | Include Markdown in response |
-| `response_format_zip` | bool | Return results as a ZIP archive |
-| `return_original_file` | bool | Include the original PDF in the ZIP |
-| `start_page_id` | int | First page to parse (0-indexed) |
-| `end_page_id` | int | Last page to parse (0-indexed) |
-| `backend` | string | Processing backend: `pipeline`, `vlm`, or `hybrid` |
-
-### Check service health
-
-```bash
-curl http://127.0.0.1:8000/health
-```
-
 ## Project structure
 
 ```
@@ -156,18 +92,6 @@ curl http://127.0.0.1:8000/health
 └── output/              # API output directory
 ```
 
-## How ROCm wheel routing works
-
-The central challenge is preventing `uv`/`pip` from replacing AMD's ROCm-compiled PyTorch wheels with generic CUDA/CPU builds from PyPI. The `pyproject.toml` solves this with three mechanisms:
-
-1. **Explicit index**: The AMD wheel repository is declared as a flat index with `explicit = true`, meaning packages are ONLY fetched from it when specifically routed there.
-
-2. **Source routing**: `[tool.uv.sources]` pins `torch`, `torchvision`, `torchaudio`, `triton`, and `apex` to the ROCm index. The resolver will not consider PyPI for these packages.
-
-3. **Version pinning**: Each ROCm package is pinned to the exact version available for Python 3.13 in the ROCm 7.2.1 repository.
-
-The Dockerfile's build-time verification step checks that no `nvidia-*` packages were installed, catching routing failures before the image ships.
-
 ## Troubleshooting
 
 ### GPU not detected (0 GB VRAM, CUDA not available)
@@ -180,6 +104,7 @@ stat -c '%g' /dev/kfd /dev/dri/renderD128
 # Update GPU_GID in .env with the output
 make restart
 ```
+If you end up with different GUIDs for both then you have to pass them both in, so you may need to manually edit the `docker-compose.yaml` file.
 
 **PyPI torch replaced ROCm torch**: Check inside the container:
 ```bash
@@ -212,30 +137,7 @@ MINERU_VIRTUAL_VRAM_SIZE=32
 ```
 Then `make restart`.
 
-## Available ROCm packages
+### AMDGPU Hang Events
 
-The `pyproject.toml` routes the following packages to AMD's ROCm 7.2.1 repository. Additional packages are listed as comments and can be enabled if needed:
+There's a problem somewhere out there...  I've seen lots of people online give conflicting reports of what corrects this problem. For me on Ubuntu 25.10, I opened `/etc/default/grub` and added `amdgpu.cwsr_enable=0` to the end of `GRUB_CMDLINE_LINUX_DEFAULT="..."`.  After saving that, I ran `sudo update-grub`, and restarted.  
 
-**Active (Python 3.13)**:
-`torch`, `torchvision`, `torchaudio`, `triton`, `apex`
-
-**Available for Python 3.13** (commented out):
-`triton_kernels`, `xformers`, `transformer_engine`, `transformer_engine_rocm`, `transformer_engine_torch`
-
-**Available for Python 3.12 only** (commented out):
-`jaxlib`, `jax_rocm7_plugin`, `jax_rocm7_pjrt`, `onnxruntime_migraphx`, `tensorflow_rocm`
-
-## Version matrix
-
-| Component | Version | Notes |
-|-----------|---------|-------|
-| Ubuntu | 25.10 | Base image |
-| Python | 3.13 | Highest supported by MinerU (<3.14) |
-| ROCm | 7.2.1 | AMD GPU compute stack |
-| PyTorch | 2.9.1 | Highest available for cp313 in ROCm 7.2.1 repo |
-| torchvision | 0.24.0 | Matches torch 2.9.1 |
-| torchaudio | 2.9.0 | Matches torch 2.9.1 |
-| triton | 3.5.1 | ROCm-compiled |
-| apex | 1.9.0 | ROCm-compiled |
-| MinerU | 3.0.8 | Pinned with frozen dependencies |
-| uv | 0.11.3 | Python package manager |
