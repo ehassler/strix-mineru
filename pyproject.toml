@@ -1,0 +1,114 @@
+# ── MinerU + ROCm PyTorch environment ────────────────────────────────────────
+#
+# This pyproject.toml pins MinerU 3.0.8 and directs torch/torchvision/
+# torchaudio/triton/apex to the AMD ROCm 7.2.1 wheel repo so they are
+# never pulled from PyPI (which would install CUDA/CPU builds instead).
+#
+# Usage inside the Dockerfile:
+#   COPY pyproject.toml /opt/mineru/
+#   RUN cd /opt/mineru && uv pip install --no-cache -r pyproject.toml
+#
+# Or with uv project mode:
+#   RUN cd /opt/mineru && uv sync --no-dev
+
+[project]
+name = "mineru-rocm"
+version = "1.0.0"
+requires-python = ">=3.13,<3.14"
+description = "MinerU PDF-to-Markdown with ROCm-accelerated PyTorch"
+
+dependencies = [
+    # ── ROCm-compiled packages (sourced from radeon repo via [tool.uv.sources]) ──
+    "torch>=2.9.1,<2.10",
+    "torchvision>=0.24.0,<0.25",
+    "torchaudio>=2.9.0,<2.10",
+    "triton>=3.5.1,<3.6",
+    "apex>=1.9.0,<1.10",
+
+    # ── MinerU (pinned) ──────────────────────────────────────────────────────
+    "mineru==3.0.8",
+
+    # ── MinerU core dependencies (from pyproject.toml [project.dependencies]) ─
+    "boto3>=1.28.43",
+    "click>=8.1.7",
+    "loguru>=0.7.2",
+    "numpy>=1.21.6",
+    "pdfminer.six>=20251230",
+    "tqdm>=4.67.1",
+    "requests",
+    "httpx",
+    "pillow>=11.0.0",
+    "pypdfium2>=4.30.0",
+    "pypdf>=5.6.0",
+    "reportlab",
+    "pdftext>=0.6.3",
+    "modelscope>=1.26.0",
+    "huggingface-hub>=0.32.4",
+    "json-repair>=0.46.2",
+    "opencv-python>=4.11.0.86",
+    "fast-langdetect>=0.2.3,<0.3.0",
+    "scikit-image>=0.25.0,<1.0.0",
+    "openai>=1.70.0,<3",
+    "beautifulsoup4>=4.13.5,<5",
+    "magika>=0.6.2,<1.1.0",
+    "mineru-vl-utils>=0.1.19.1,<1",
+    "qwen-vl-utils>=0.0.14,<1",
+
+    # ── [pipeline] extra deps (minus torch/torchvision) ──────────────────────
+    "matplotlib>=3.10,<4",
+    "ultralytics>=8.3.48,<9",
+    "doclayout_yolo==0.0.4",
+    "dill>=0.3.8,<1",
+    "PyYAML>=6.0.2,<7",
+    "ftfy>=6.3.1,<7",
+    "shapely>=2.0.7,<3",
+    "pyclipper>=1.3.0,<2",
+    "omegaconf>=2.3.0,<3",
+    "transformers>=4.51.1,!=4.57.2,<5.0.0",
+    "onnxruntime>1.17.0",
+    "albumentations",
+
+    # ── [vlm] extra deps (minus torch) ───────────────────────────────────────
+    "accelerate>=1.5.1",
+
+    # ── [api] extra deps ─────────────────────────────────────────────────────
+    "fastapi",
+    "python-multipart",
+    "uvicorn",
+]
+
+[tool.uv]
+package = false
+
+# ── Route ROCm packages to the Radeon flat index ────────────────────────────
+# The `explicit = true` flag ensures ONLY the packages listed in
+# [tool.uv.sources] are fetched from this index.  Everything else
+# comes from PyPI.  This is what prevents torch from being resolved
+# against PyPI's CUDA/CPU builds.
+
+[tool.uv.sources]
+torch        = { index = "rocm" }
+torchvision  = { index = "rocm" }
+torchaudio   = { index = "rocm" }
+triton       = { index = "rocm" }
+apex         = { index = "rocm" }
+# Also available for Python 3.13 (cp313):
+triton_kernels           = { index = "rocm" }  # 1.0.0 — py3-none-any
+xformers                 = { index = "rocm" }  # 0.0.32 — cp39-abi3 (works with 3.13)
+transformer_engine       = { index = "rocm" }  # 2.6.0 — py3-none-any (meta-package)
+transformer_engine_rocm  = { index = "rocm" }  # 2.6.0 — manylinux binary
+transformer_engine_torch = { index = "rocm" }  # 2.6.0 — source tarball, needs build
+# Available for Python 3.12 only (no cp313 wheels):
+# jaxlib                   = { index = "rocm" }  # 0.8.2
+# jax_rocm7_plugin         = { index = "rocm" }  # 0.8.2
+# jax_rocm7_pjrt           = { index = "rocm" }  # 0.8.2 — py3-none (but JAX ecosystem needs cp312)
+# onnxruntime_migraphx     = { index = "rocm" }  # 1.23.2 — cp310, cp312 only
+# Available for Python 3.10/3.12 only (no cp313 wheels):
+# tensorflow_rocm          = { index = "rocm" }  # 2.19.1 — cp310, cp312 only
+# tf_nightly_rocm          = { index = "rocm" }  # 2.21.0.dev0 — cp310, cp312 only
+
+[[tool.uv.index]]
+name     = "rocm"
+url      = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2.1/"
+format   = "flat"
+explicit = true

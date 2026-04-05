@@ -1,0 +1,66 @@
+services:
+  mineru-api:
+    image: mineru-rocm:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mineru
+    restart: unless-stopped
+    network_mode: host
+    ipc: host
+
+    # ── GPU access ───────────────────────────────────────────────────────────
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      # Must match the GID(s) that own /dev/kfd and /dev/dri/renderD128 on the
+      # HOST.  Check with:  stat -c '%g' /dev/kfd /dev/dri/renderD128
+      # Usually both devices share the same GID — set GPU_GID in .env.
+      # If they differ, override at run time:
+      #   docker run --group-add <gid1> --group-add <gid2> ...
+      - ${GPU_GID:-44}
+
+    # ── Resource limits for ROCm/HIP ─────────────────────────────────────────
+    # memlock: -1    → unlimited locked memory (required for GPU DMA buffers)
+    # stack: 64 MB   → prevents stack overflows in deep model inference paths
+    ulimits:
+      memlock: -1
+      stack: 67108864
+
+    # ── API server arguments ─────────────────────────────────────────────────
+    # The Dockerfile ENTRYPOINT is `mineru-api`; these are its CLI arguments.
+    # Edit here to change host/port or add engine parameters — no rebuild needed.
+    # If you change the port, also set MINERU_PORT in environment below.
+    command:
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "${MINERU_PORT:-8000}"
+      - --gpu-memory-utilization
+      - "${GPU_MEMORY_UTILIZATION:-0.9}"
+      # Uncomment pairs below to enable (each flag and its value are separate items):
+      # - --enable-vlm-preload
+      # - "true"
+      # - --data-parallel-size
+      # - "2"
+
+    environment:
+      - MINERU_API_OUTPUT_DIR=/home/mineru/output
+      - MINERU_PORT=${MINERU_PORT:-8000}
+      - MINERU_VIRTUAL_VRAM_SIZE=${MINERU_VIRTUAL_VRAM_SIZE:-}
+      - TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=${TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL:-0}
+      # Uncomment to switch model source if huggingface is inaccessible:
+      # - MINERU_MODEL_SOURCE=modelscope
+      # Uncomment to tune concurrency (default 3):
+      # - MINERU_API_MAX_CONCURRENT_REQUESTS=3
+
+    volumes:
+      - ${MINERU_MODELS:-./models}:/home/mineru/.cache
+      - ${MINERU_OUTPUT:-./output}:/home/mineru/output
+
+    logging:
+      driver: json-file
+      options:
+        max-size: 50m
+        max-file: "3"
